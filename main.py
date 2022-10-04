@@ -2,12 +2,12 @@
 import telebot
 from telebot import types
 from string import Template
-import data_bot
+import os
 
 user_dict = {}  # импровизированная база данных, где мы храним данные посетителя в данный момент (замена на sql)
 
-bot = telebot.TeleBot(data_bot.TOKEN)
-CHAT_ID = data_bot.CHAT_ID
+bot = telebot.TeleBot(os.getenv("TOKEN"))
+CHAT_ID = os.getenv("CHAT_ID")
 
 
 def main():
