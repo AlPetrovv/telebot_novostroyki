@@ -1,5 +1,7 @@
-"""telebot: Модуль для работы с телеграмм; string: Модуль для работы со строками(шаблоны) """
+"""telebot: Модуль для работы с телеграмм"""
+import sqlite3
 import telebot
+import re
 from telebot import types
 from string import Template
 import os
@@ -8,12 +10,6 @@ user_dict = {}  # импровизированная база данных, гд
 
 bot = telebot.TeleBot(os.getenv("TOKEN"))
 CHAT_ID = os.getenv("CHAT_ID")
-
-
-def main():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    starts = types.KeyboardButton('/start')
-    markup.add(starts)
 
 
 class User:  # можно заменить базой данных
@@ -33,7 +29,7 @@ class User:  # можно заменить базой данных
 
 
 @bot.message_handler(commands=['start'])
-def start(message):
+def main(message: dict):
     """ function gets a message and gives the user the choice to go the next choice.
 
     :param message: data of chat, user, ...
@@ -49,7 +45,7 @@ def start(message):
 
 
 @bot.message_handler(commands=['Инвестиции'])
-def choice_inv(message):
+def investment(message: dict):
     chat_id = message.chat.id  # id чата(не пользователя)
     user_dict[chat_id] = User(message.text)
     user = user_dict[chat_id]
@@ -65,33 +61,42 @@ def choice_inv(message):
     bot.register_next_step_handler(msg, return_back)
 
 
-def transition_to_cash(message):
+def transition_to_cash(message: dict):
     if message.text == 'Наличные':
         chat_id = message.chat.id
         user = user_dict[chat_id]
         user.invest_cash = message.text
         markup = types.ReplyKeyboardRemove(selective=False)
+        print(markup)
         msg = bot.send_message(chat_id,
-                               'Введите сумму и ваш контактный номер, чтобы мы могли связаться с вами:'
-                               '(Пример: 40000000;79...)',
-                               reply_markup=markup)
+                               'Введите сумму и ваш контактный номер, чтобы мы могли связаться с вами в формате:'
+                               '123456789;81234567890', reply_markup=markup)
         bot.register_next_step_handler(msg, cheking_transition_to_cash)
 
 
-def cheking_transition_to_cash(message):  # добавить регулярное выражение
+def cheking_transition_to_cash(message: dict):  # добавить регулярное выражение
     """function gets a message,  checks it and sends data to the telegram channel"""
+    chat_id = message.chat.id
+    user = user_dict[chat_id]
+    user.invest_cash_reg = message.text
     try:
-        chat_id = message.chat.id
-        user = user_dict[chat_id]
-        user.invest_cash_reg = message.text
-        bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊', parse_mode='Markdown')
-        bot.send_message(CHAT_ID,
-                         get_data_user_inv_cash(user, 'Заявка от бота', bot.get_me().username,
-                                                message.from_user.first_name),
-                         parse_mode='Markdown')
+        if len(re.findall(r'[\d]+;[\d]{11,12}', message.text)) != 1:
+            bot.send_message(chat_id, 'Неправильный ввод данных, попробуйте снова', parse_mode='Markdown')
+            message['text'] = 'Наличные'
+            transition_to_cash(message)
+
+        else:
+            bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊',
+                             parse_mode='Markdown')
+            bot.send_message(CHAT_ID,
+                             get_data_user_inv_cash(user, 'Заявка от бота', bot.get_me().username,
+                                                    message.from_user.first_name),
+                             parse_mode='Markdown')
     # except Exception as e:
-    except ValueError:
-        bot.reply_to(message, 'Не правильный ввод данных')
+    except:
+        bot.send_message(chat_id, 'Что-то пошло не так, попробуйте снова', parse_mode='Markdown')
+        message.text = 'Назад'
+        return_back(message)
 
 
 def get_data_user_inv_cash(user, title, bot_name, username):
@@ -171,7 +176,7 @@ def choice_buy(message):
     msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
     bot.register_next_step_handler(msg, transition_to_secondary)
     bot.register_next_step_handler(msg, transition_to_new)
-    bot.register_next_step_handler(msg, back2)  # заменить на return_back
+    bot.register_next_step_handler(msg, return_back)  # заменить на return_back
 
 
 def transition_to_secondary(message):
@@ -187,7 +192,7 @@ def transition_to_secondary(message):
         msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
         bot.register_next_step_handler(msg, transition_to_secondary_mortgage)
         bot.register_next_step_handler(msg, transition_to_secondary_cash)
-        bot.register_next_step_handler(msg, back2)
+        bot.register_next_step_handler(msg, return_back)
 
 
 def transition_to_secondary_mortgage(message):
@@ -297,7 +302,7 @@ def transition_to_new(message):
         msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
         bot.register_next_step_handler(msg, transition_to_new_mortgage)
         bot.register_next_step_handler(msg, transition_to_new_cash)
-        bot.register_next_step_handler(msg, back2)  # change to return_step
+        bot.register_next_step_handler(msg, return_back)  # change to return_step
 
 
 def transition_to_new_cash(message):
@@ -335,18 +340,6 @@ def checking_transition_to_new_cash(message):
                          parse_mode='Markdown')
     except ValueError:
         bot.reply_to(message, 'Не правильный ввод данных')
-
-
-def back2(message):
-    if message.text == 'Назад':
-        chat_id = message.chat.id
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        one = types.KeyboardButton('/Инвестиции')
-        two = types.KeyboardButton('/Продажа')
-        three = types.KeyboardButton('/Покупка')
-
-        markup.add(one, two, three)
-        bot.send_message(chat_id, 'Хорошо, давайте начнем заново'.format(message.from_user), reply_markup=markup)
 
 
 def get_data_user_new_mortgage(user, title, bot_name):
@@ -391,7 +384,7 @@ def choice_sale(message):
     msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
     bot.register_next_step_handler(msg, transition_to_exchange)
     bot.register_next_step_handler(msg, transition_to_valuation)
-    bot.register_next_step_handler(msg, back3)
+    bot.register_next_step_handler(msg, return_back)
 
 
 def transition_to_exchange(message):
@@ -407,7 +400,7 @@ def transition_to_exchange(message):
         msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
         bot.register_next_step_handler(msg, transition_to_exchange_secondary)
         bot.register_next_step_handler(msg, transition_to_exchange_new)
-        bot.register_next_step_handler(msg, back3)
+        bot.register_next_step_handler(msg, return_back)
 
 
 def transition_to_exchange_secondary(message):
@@ -511,18 +504,6 @@ def checking_transition_to_valuation(message):
                          parse_mode='Markdown')
     except ValueError:
         bot.reply_to(message, 'Не правильный ввод данных')
-
-
-def back3(message):
-    if message.text == 'Назад':
-        chat_id = message.chat.id
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        one = types.KeyboardButton('/Инвестиции')
-        two = types.KeyboardButton('/Продажа')
-        three = types.KeyboardButton('/Покупка')
-
-        markup.add(one, two, three)
-        bot.send_message(chat_id, 'Хорошо, давайте начнем заново'.format(message.from_user), reply_markup=markup)
 
 
 def get_data_user_valuation(user, title, bot_name):
