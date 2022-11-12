@@ -1,14 +1,15 @@
-"""telebot: Модуль для работы с телеграмм"""
+"""This is a bot for filling out the client's application"""
 import sqlite3
-import telebot
+
+import telebot.types
+from telebot import TeleBot, types
 import re
-from telebot import types
 from string import Template
 import os
 
 user_dict = {}  # импровизированная база данных, где мы храним данные посетителя в данный момент (замена на sql)
 
-bot = telebot.TeleBot(os.getenv("TOKEN"))
+bot = TeleBot(os.getenv("TOKEN"))
 CHAT_ID = os.getenv("CHAT_ID")
 
 
@@ -17,19 +18,10 @@ class User:  # можно заменить базой данных
 
     def __init__(self, data):
         self.data = data
-        # Доделать
-        # keys = ['invest', 'invest_cash', 'invest_cash_reg', 'mortgage_reg', 'mortgage', 'buy', 'buy_secondary',
-        #         'buy_secondary_mortgage', 'buy_secondary_mortgage_reg', 'buy_secondary_cash', 'buy_secondary_cash_reg'
-        #         , 'buy_newBuilding', 'buy_newBuilding_mortgage',  'buy_newBuilding_cash',
-        #         'buy_newBuilding_cash_reg', 'buy_newBuilding_mortgage_reg', 'sale', 'sale_exchange',
-        #         'sale_exchange_secondary', 'sale_exchange_newBuilding', 'sale_exchange_secondary_reg',
-        #         'sale_exchange_newBuilding_reg', 'sale_valuation', 'sale_valuation_reg']
-        # for key in keys:
-        #     self.key = None
 
 
 @bot.message_handler(commands=['start'])
-def main(message: dict):
+def main(message: types.Message):
     """ function gets a message and gives the user the choice to go the next choice.
 
     :param message: data of chat, user, ...
@@ -45,45 +37,53 @@ def main(message: dict):
 
 
 @bot.message_handler(commands=['Инвестиции'])
-def investment(message: dict):
-    chat_id = message.chat.id  # id чата(не пользователя)
+def investment(message: types.Message):
+    chat_id = message.chat.id
     user_dict[chat_id] = User(message.text)
     user = user_dict[chat_id]
-    user.invest = message.text
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     cash = types.KeyboardButton('Наличные')
     mortgage = types.KeyboardButton('Ипотека')
     back = types.KeyboardButton('Назад')
     markup.add(cash, mortgage, back)
     msg = bot.send_message(chat_id, 'Продолжим', reply_markup=markup)
-    bot.register_next_step_handler(msg, transition_to_cash)
-    bot.register_next_step_handler(msg, transition_to_mortgage)
-    bot.register_next_step_handler(msg, return_back)
+    if message.text == "Наличные":
+        bot.register_next_step_handler(msg, transition_to_cash)
+    elif message.text == "Ипотека":
+        bot.register_next_step_handler(msg, transition_to_mortgage)
+    elif message.text == "Назад":
+        bot.register_next_step_handler(msg, return_back)
+    else:  # додумать(нужно чтобы если мы что-то вводили просто так, он писал нам что нужно нажимать одну из кнопок)
+        msg = bot.send_message(chat_id,
+                               'Для продолжения нужно нажать на любую из кнопок', reply_markup=markup)
 
 
-def transition_to_cash(message: dict):
+def transition_to_cash(message: types.Message):
     if message.text == 'Наличные':
         chat_id = message.chat.id
-        user = user_dict[chat_id]
-        user.invest_cash = message.text
-        markup = types.ReplyKeyboardRemove(selective=False)
-        print(markup)
+        user = user_dict[chat_id]  #  под вопросом
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        back = types.KeyboardButton('Назад')
+        markup.add(back)
         msg = bot.send_message(chat_id,
                                'Введите сумму и ваш контактный номер, чтобы мы могли связаться с вами в формате:'
                                '123456789;81234567890', reply_markup=markup)
         bot.register_next_step_handler(msg, cheking_transition_to_cash)
 
 
-def cheking_transition_to_cash(message: dict):  # добавить регулярное выражение
+def cheking_transition_to_cash(message: types.Message):
     """function gets a message,  checks it and sends data to the telegram channel"""
     chat_id = message.chat.id
     user = user_dict[chat_id]
-    user.invest_cash_reg = message.text
     try:
         if len(re.findall(r'[\d]+;[\d]{11,12}', message.text)) != 1:
-            bot.send_message(chat_id, 'Неправильный ввод данных, попробуйте снова', parse_mode='Markdown')
-            message['text'] = 'Наличные'
-            transition_to_cash(message)
+            if message.text == 'Назад':
+                return_back(message)  # поменять название на back
+            else:
+                bot.send_message(chat_id,
+                             'Неправильный ввод данных, попробуйте снова')
+                message.text = "Наличные"
+                transition_to_cash(message)
 
         else:
             bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊',
@@ -92,11 +92,9 @@ def cheking_transition_to_cash(message: dict):  # добавить регуля�
                              get_data_user_inv_cash(user, 'Заявка от бота', bot.get_me().username,
                                                     message.from_user.first_name),
                              parse_mode='Markdown')
-    # except Exception as e:
-    except:
-        bot.send_message(chat_id, 'Что-то пошло не так, попробуйте снова', parse_mode='Markdown')
+    except Exception:
         message.text = 'Назад'
-        return_back(message)
+        return_back(message.text)
 
 
 def get_data_user_inv_cash(user, title, bot_name, username):
@@ -122,21 +120,31 @@ def transition_to_mortgage(message):
         markup = types.ReplyKeyboardRemove(selective=False)
         msg = bot.send_message(chat_id,
                                'Введите сумму, первоначальный взнос, комфортный платеж и ваш контактный номер, '
-                               'чтобы мы могли взязаться с вами :(Пример: 40000000;1000000;15000;79...)',
+                               'чтобы мы могли взязаться с вами: (Пример: 40000000;1000000;15000;79...), если хотите вернуться, напишите back',
                                reply_markup=markup)
         bot.register_next_step_handler(msg, checking_transition_to_mortgage)
 
 
 def checking_transition_to_mortgage(message):
+    chat_id = message.chat.id
+    user = user_dict[chat_id]
+    user.mortgage_reg = message.text
     try:
-        chat_id = message.chat.id
-        user = user_dict[chat_id]
-        user.mortgage_reg = message.text
-        bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊', parse_mode='Markdown')
-        bot.send_message(CHAT_ID, get_data_user_inv_mortgage(user, 'Заявка от бота', bot.get_me().username),
-                         parse_mode='Markdown')
-    except ValueError:
-        bot.reply_to(message, 'Не правильный ввод данных')
+        if len(re.findall(r'[\d]+;[\d]+;[\d]+;[\d]{11,12}', message.text)) != 1:
+            bot.send_message(chat_id, 'Неправильный ввод данных, попробуйте снова', parse_mode='Markdown')
+            print(message.text)
+            message.text = "Ипотека"
+            transition_to_mortgage(message)
+        else:
+            bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊',
+                             parse_mode='Markdown')
+            bot.send_message(CHAT_ID, get_data_user_inv_mortgage(user, 'Заявка от бота', bot.get_me().username),
+                             parse_mode='Markdown')
+
+    except Exception as e:
+        message.text = 'Назад'
+        message.exc = e.args
+        error_back(message.text)
 
 
 def get_data_user_inv_mortgage(user, title, bot_name):
@@ -160,6 +168,17 @@ def return_back(message):
         buy = types.KeyboardButton('/Покупка')
         markup.add(inv, sale, buy)
         bot.send_message(chat_id, 'Хорошо, давайте начнем заново'.format(message.from_user), reply_markup=markup)
+
+
+def error_back(message):  # при ошибке
+    if message.text == 'Назад':
+        chat_id = message.chat.id
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        inv = types.KeyboardButton('/Инвестиции')
+        sale = types.KeyboardButton('/Продажа')
+        buy = types.KeyboardButton('/Покупка')
+        markup.add(inv, sale, buy)
+        bot.send_message(chat_id, 'Произошла ошибка, попробуйте снова'.format(message.from_user), reply_markup=markup)
 
 
 @bot.message_handler(commands=['Покупка'])
@@ -200,7 +219,6 @@ def transition_to_secondary_mortgage(message):
         chat_id = message.chat.id
         user = user_dict[chat_id]
         user.buy_secondary_mortgage = message.text
-        markup = types.ReplyKeyboardRemove(selective=False)
         msg = bot.send_message(chat_id,
                                'Введите сумму, первоначальный взнос, комфортный платеж и ваш контактный номер, '
                                'чтобы мы могли взязаться с вами:(Пример: 40000000;1000000;15000;79...)',
@@ -209,17 +227,25 @@ def transition_to_secondary_mortgage(message):
 
 
 def checking_transition_to_secondary_mortgage(message):
+    chat_id = message.chat.id
+    user = user_dict[chat_id]
+    user.buy_secondary_cash_reg = message.text
     try:
-        chat_id = message.chat.id
-        user = user_dict[chat_id]
-        user.buy_secondary_cash_reg = message.text
-        bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊', parse_mode='Markdown')
-        bot.send_message(CHAT_ID,
-                         get_data_user_secondary_mortgage(user, 'Заявка от бота', bot.get_me().username,
-                                                          message.from_user.username),
-                         parse_mode='Markdown')
-    except ValueError:
-        bot.reply_to(message, 'Не правильный ввод данных')
+        if len(re.findall(r'[\d]+;[\d]+;[\d]+;[\d]{11,12}', message.text)) != 1:
+            bot.send_message(chat_id, 'Неправильный ввод данных, попробуйте снова', parse_mode='Markdown')
+            message.text = "Ипотека"
+            transition_to_secondary_mortgage(message)
+
+        else:
+            bot.send_message(chat_id, 'Ваша заявка принята! Наш специалист скоро свяжется с вами 😊',
+                             parse_mode='Markdown')
+            bot.send_message(CHAT_ID,
+                             get_data_user_secondary_mortgage(user, 'Заявка от бота', bot.get_me().username,
+                                                              message.from_user.username),
+                             parse_mode='Markdown')
+    except Exception:
+        message.text = 'Назад'
+        return_back(message.text)
 
 
 def get_data_user_secondary_mortgage(user, title, name, username):
