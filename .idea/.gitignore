@@ -2,4 +2,9 @@
 /shelf/
 /workspace.xml
 data_bot
+vcs.xml
+workspace.xml
+misc.xml
+modules.xml
+bot.iml
 
