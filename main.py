@@ -1,15 +1,25 @@
 """This is a bot for filling out the client's application"""
-import time
+
 from telebot import TeleBot, types
 import re
 from string import Template
 import os
+from sys import argv
+import yaml
+
+with open('config.yaml') as f:
+    config = yaml.safe_load(f)
 
 user_dict = {}  # импровизированная база данных, где мы храним данные посетителя в данный момент (замена на sql)
 
-bot = TeleBot(os.getenv("TOKEN"))
-CHAT_ID = os.getenv("CHAT_ID")
+# config = configparser.ConfigParser()
+# c = config.read('config.ini')
+bot = TeleBot(config['telegram']['bot_id'])
+
+CHAT_ID = config['telegram']['chat_id']
+
 user = ''
+
 chat_id = ''
 
 
@@ -68,7 +78,7 @@ def inv_to_cash(message: types.Message):
         bot.register_next_step_handler(msg, cheсk_inv_to_cash)
 
 
-def cheсk_inv_to_cash(message: types.Message):
+def check_inv_to_cash(message: types.Message):
     """function gets a message,  checks it and sends data to the telegram channel"""
     user_dict[user.Id].update({cheсk_inv_to_cash.__name__: message.text})
     try:
@@ -89,7 +99,7 @@ def cheсk_inv_to_cash(message: types.Message):
                                                         message.from_user.first_name),
                              parse_mode='Markdown')
 
-    except Exception:
+    except Exception as e:
         message.text = 'Назад'
         return_back(message)
 
@@ -534,6 +544,6 @@ def send_data_user_valuation(data, title, bot_name):
     })
 
 
-bot.polling(none_stop=True)
 if __name__ == '__main__':
+    bot.polling(none_stop=True)
     main()
