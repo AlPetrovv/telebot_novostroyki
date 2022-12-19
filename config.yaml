@@ -1,3 +1,3 @@
 telegram:
-  bot_id: "5644148737:AAHHtnzKSNi2lw0Nnqb9fi3qozuvHQuBNWM"
-  chat_id: "-1001854918159"
+  bot_id: "<your token>"
+  chat_id: "<chat_id>"
